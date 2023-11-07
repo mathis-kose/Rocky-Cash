@@ -1,25 +1,888 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.5.33414.496
-MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rocky Cash", "Rocky Cash\Rocky Cash.csproj", "{DD8A22E7-2077-4D7F-82AA-CB7FD749628F}"
-EndProject
-Global
-	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|Any CPU = Debug|Any CPU
-		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{DD8A22E7-2077-4D7F-82AA-CB7FD749628F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DD8A22E7-2077-4D7F-82AA-CB7FD749628F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DD8A22E7-2077-4D7F-82AA-CB7FD749628F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DD8A22E7-2077-4D7F-82AA-CB7FD749628F}.Release|Any CPU.Build.0 = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {41CA613E-2C43-4D0A-A2B3-75DF8444906F}
-	EndGlobalSection
-EndGlobal
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Collections.Generic;
+
+
+/* Liste aller ausstehenden änderungen
+ * - shortkeys für einsätze (z.B. drei viertel)
+ * - ein separater modus, ohne rundenbegrenzung
+ * - theoretischer Kontostand stimmt nicht überein
+*/
+
+class RocketGame
+{
+    private long balance; // Der Kontostand des Spielers
+    private Random random; // Zufallszahlengenerator
+    private int currentRound; // Aktuelle Runde
+    private const int totalRounds = 10; // Gesamtanzahl der Runden
+    private double multiplier; // Der Multiplikator für den Einsatz
+    private string scoresFile = "..\\..\\..\\scores.csv"; // Dateiname für die Score-CSV-Datei
+    private const string scoreSeparator = ","; // Trennzeichen für die Score-CSV-Datei
+    int exitStep;
+    public int rocket_step_delay;
+    private List<ShopItem> shopItems1;
+    private List<ShopItem> shopItems2;
+    private List<ShopItem> playerInventory;
+
+    public RocketGame(double initialBalance)
+    {
+        balance = (long)initialBalance; // Initialer Kontostand
+        random = new Random(); // Zufallszahlengenerator initialisieren
+        currentRound = 1; // Start der ersten Runde
+        multiplier = 1.0; // Multiplikator auf 1.0 setzen
+        rocket_step_delay = 600;
+        shopItems1 = new List<ShopItem>
+    {
+        new ShopItem("Jetpack", CalculateItemPrice(balance, 4), "Mit diesem Jetpack kannst du in der Mitte des Spiels eine kontrollierte Abstiegsbremse verwenden, um sicher auszusteigen."),
+        new ShopItem("Glücksbringer", CalculateItemPrice(balance, 5), "Der Glücksbringer erhöht deine Gewinnchancen um einen kleinen Prozentsatz. Verwende ihn vor jedem Spiel."),
+        new ShopItem("Parachute", CalculateItemPrice(balance, 3), "Ein Fallschirm ermöglicht dir einen sicheren Ausstieg, wenn die Rakete abstürzt. Kann nur einmal verwendet werden."),
+        new ShopItem("Zeitsprung-Prototyp", CalculateItemPrice(balance, 6), "Mit diesem einzigartigen Prototyp kannst du die Zeit für kurze Zeit zurückspulen und einen besseren Zeitpunkt für deinen Ausstieg wählen."),
+        new ShopItem("Raketenbooster", CalculateItemPrice(balance, 7), "Der Raketenbooster beschleunigt die Rakete für kurze Zeit, wodurch der Multiplikator schneller steigt."),
+        new ShopItem("Schutzschild", CalculateItemPrice(balance, 2), "Ein Schutzschild schützt dich vor einem möglichen Absturz. Kann nur einmal pro Spiel verwendet werden."),
+        new ShopItem("Raketensteuerung", CalculateItemPrice(balance, 8), "Mit dieser Steuerung kannst du die Rakete für kurze Zeit in eine sicherere Richtung lenken."),
+        new ShopItem("Sauerstofftank", CalculateItemPrice(balance, 10), "Der Sauerstofftank ermöglicht dir einen längeren Aufenthalt in der Rakete, um den Multiplikator zu erhöhen, bevor du aussteigst."),
+    };
+        shopItems2 = new List<ShopItem>
+    {
+        new ShopItem("Jetpack", CalculateItemPrice(balance, 4), "Mit diesem Jetpack kannst du in der Mitte des Spiels eine kontrollierte Abstiegsbremse verwenden, um sicher auszusteigen."),
+        new ShopItem("Glücksbringer", CalculateItemPrice(balance, 5), "Der Glücksbringer erhöht deine Gewinnchancen um einen kleinen Prozentsatz. Verwende ihn vor jedem Spiel."),
+        new ShopItem("Parachute", CalculateItemPrice(balance, 3), "Ein Fallschirm ermöglicht dir einen sicheren Ausstieg, wenn die Rakete abstürzt. Kann nur einmal verwendet werden."),
+        new ShopItem("Zeitsprung-Prototyp", CalculateItemPrice(balance, 6), "Mit diesem einzigartigen Prototyp kannst du die Zeit für kurze Zeit zurückspulen und einen besseren Zeitpunkt für deinen Ausstieg wählen."),
+        new ShopItem("Raketenbooster", CalculateItemPrice(balance, 7), "Der Raketenbooster beschleunigt die Rakete für kurze Zeit, wodurch der Multiplikator schneller steigt."),
+        new ShopItem("Schutzschild", CalculateItemPrice(balance, 2), "Ein Schutzschild schützt dich vor einem möglichen Absturz. Kann nur einmal pro Spiel verwendet werden."),
+        new ShopItem("Raketensteuerung", CalculateItemPrice(balance, 8), "Mit dieser Steuerung kannst du die Rakete für kurze Zeit in eine sicherere Richtung lenken."),
+        new ShopItem("Sauerstofftank", CalculateItemPrice(balance, 10), "Der Sauerstofftank ermöglicht dir einen längeren Aufenthalt in der Rakete, um den Multiplikator zu erhöhen, bevor du aussteigst."),
+    };
+        playerInventory = new List<ShopItem>();
+
+    }
+
+    private long CalculateItemPrice(long balance, int priceFactor)
+    {
+        return balance / priceFactor;
+    }
+    private string FormatCurrency(long amount)
+    {
+        return amount.ToString("C2");
+    }
+
+    public void Start()
+    {
+
+        // Hintergrundfarbe der Konsole ändern
+        Console.ForegroundColor = ConsoleColor.Green;
+        // Willkommensnachricht anzeigen
+
+        Console.WriteLine(@"
+            $$$$$$$\   $$$$$$\   $$$$$$\  $$\   $$\ $$\     $$\        $$$$$$\   $$$$$$\     $$\    $$\   $$\
+            $$  __$$\ $$  __$$\ $$  __$$\ $$ | $$  |\$$\   $$  |      $$  __$$\ $$  __$$\  $$$$$$\  $$ |  $$ |
+            $$ |  $$ |$$ /  $$ |$$ /  \__|$$ |$$  /  \$$\ $$  /       $$ /  \__|$$ /  $$ |$$  __$$\ $$ |  $$ |
+            $$$$$$$  |$$ |  $$ |$$ |      $$$$$  /    \$$$$  /        $$ |      $$$$$$$$ |$$ /  \__|$$$$$$$$ |
+            $$  __$$< $$ |  $$ |$$ |      $$  $$<      \$$  /         $$ |      $$  __$$ |\$$$$$$\  $$  __$$ |
+            $$ |  $$ |$$ |  $$ |$$ |  $$\ $$ |\$$\      $$ |          $$ |  $$\ $$ |  $$ | \___ $$\ $$ |  $$ |
+            $$ |  $$ | $$$$$$  |\$$$$$$  |$$ | \$$\     $$ |          \$$$$$$  |$$ |  $$ |$$\  \$$ |$$ |  $$ |
+            \__|  \__| \______/  \______/ \__|  \__|    \__|           \______/ \__|  \__|\$$$$$$  |\__|  \__|
+                                                                                           \_$$  _/          
+                                                                                             \ _/             ");
+        Console.ResetColor();
+        Console.WriteLine(@"");
+        Console.ForegroundColor = ConsoleColor.White;
+        // Willkommensnachricht fortsetzen
+        Console.WriteLine("                          ***************************************************************");
+        Console.WriteLine("                          *                                                             *");
+        Console.Write("                          *       Willkommen zu ");
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Write("Rocky-Cash!"); // Name des Spiels
+        Console.ResetColor();
+        Console.WriteLine("                             *");
+        Console.WriteLine("                          *       Deine Mission : Geld machen.                          *");
+        Console.WriteLine("                          *       Wie : Steige aus bevor die Rakete crashed.            *");
+        Console.WriteLine("                          *       Dein Einsatz wird mit dem Multiplikator vermehrt.     *");
+        Console.WriteLine("                          *       Auto-Ausstieg ermöglicht dir einen exakten Ausstieg.  *");
+        Console.WriteLine("                          *                                                             *");
+        Console.WriteLine("                          ***************************************************************");
+        Console.ResetColor();
+        Console.WriteLine();
+
+        while (currentRound <= totalRounds)
+        {
+            Console.WriteLine($"                        Runde {currentRound} von {totalRounds}"); // Aktuelle Runde anzeigen
+            RunGame(); // Das eigentliche Spiel ausführen
+            if (balance <= 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("                        Game Over! Du hast kein Geld mehr.");
+                Console.ResetColor();
+
+                if (AskToPlayAgain()) // Prüfen, ob der Spieler erneut spielen möchte
+                {
+                    ResetGame(); // Das Spiel zurücksetzen
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            multiplier = 1.0; // Multiplikator auf 1 zurücksetzen
+
+            if (currentRound < totalRounds && currentRound > 1)
+            {
+                Console.WriteLine("                        Möchtest du den Shop besuchen? (Drücke 'S'): ");
+                var in_shop = Console.ReadKey(true).Key;
+                if (in_shop == ConsoleKey.S)
+                {
+                    Console.Clear();
+                    VisitShop();
+                }
+
+
+            }
+        }
+
+        if (currentRound > totalRounds)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("                        Herzlichen Glückwunsch! Du hast alle Runden überlebt.");
+            Console.ResetColor();
+            UpdateScores(); // Die Highscores aktualisieren
+            ShowHighScores(); // Die Highscores anzeigen
+
+            if (AskToPlayAgain())
+            {
+                ResetGame(); // Das Spiel zurücksetzen
+                Start(); // Spiel erneut starten
+                Console.Clear();
+            }
+
+        }
+    }
+
+    private void BuyItem(int itemIndex, List<ShopItem> items)
+    {
+        if (itemIndex >= 0 && itemIndex < items.Count)
+        {
+            ShopItem selectedItem = items[itemIndex];
+            if (balance >= selectedItem.Price)
+            {
+                Console.WriteLine($"Du möchtest {selectedItem.Name} für ${selectedItem.Price} kaufen. (Drücke 'J') ");
+                var response = Console.ReadKey(true).Key;
+                if (response == ConsoleKey.J)
+                {
+                    balance -= selectedItem.Price;
+                    playerInventory.Add(selectedItem);
+                    Console.WriteLine($"Du hast {selectedItem.Name} gekauft.");
+                    Console.WriteLine("Drücke eine beliebige Taste, um den Shop zu verlassen...");
+                    Console.ReadKey(true);
+                }
+                else
+                {
+                    Console.WriteLine($"Du hast den Kauf von {selectedItem.Name} abgebrochen.");
+                }
+            }
+            else
+            {
+                Console.WriteLine("Du hast nicht genügend Geld, um dieses Item zu kaufen.");
+            }
+        }
+    }
+
+    private void VisitShop()
+    {
+        Console.Clear();
+        Console.WriteLine("************ Shop ************");
+        Console.WriteLine("Wähle einen Shop aus:");
+        Console.WriteLine("1. Erste Art von Items");
+        Console.WriteLine("2. Zweite Art von Items");
+        Console.WriteLine("B. Zurück zum Hauptmenü");
+        Console.Write("Deine Auswahl: ");
+
+        var shopChoice = Console.ReadKey(true).Key;
+        switch (shopChoice)
+        {
+            case ConsoleKey.D1:
+                DisplayShopItems(shopItems1);
+                break;
+            case ConsoleKey.D2:
+                DisplayShopItems(shopItems2);
+                break;
+            case ConsoleKey.B:
+                // Zurück zum Hauptmenü
+                break;
+            default:
+                Console.WriteLine("Ungültige Eingabe. Bitte versuche es erneut.");
+                Console.Clear();
+                VisitShop();
+                break;
+                // Zeige das Shop-Menü erneut
+
+        }
+    }
+
+    private void DisplayShopItems(List<ShopItem> items)
+    {
+        while (true)
+        {
+            Console.Clear();
+            Console.WriteLine("************ Shop ************");
+            for (int i = 0; i < items.Count; i++)
+            {
+                ShopItem item = items[i];
+                Console.WriteLine($"{i + 1}. {item.Name} - Preis: ${item.Price} - {item.Description}");
+            }
+            Console.WriteLine("*******************************");
+            Console.WriteLine($"Aktueller Kontostand: ${FormatCurrency((long)balance)}");
+            Console.WriteLine("Drücke 'S', um zum vorherigen Menü zurückzukehren, oder gib die Nummer des Items ein, das du kaufen möchtest: ");
+            var input = Console.ReadLine();
+            if (input.Trim().ToLower() == "s")
+            {
+                break;
+            }
+            if (int.TryParse(input, out int itemIndex) && itemIndex >= 1 && itemIndex <= items.Count)
+            {
+                BuyItem(itemIndex - 1, items);
+            }
+            else
+            {
+                Console.WriteLine("Ungültige Eingabe. Bitte versuche es erneut.");
+            }
+        }
+    }
+
+
+
+    private void UseItem()
+    {
+        if (playerInventory.Count == 0)
+        {
+
+            return;
+        }
+
+        Console.WriteLine("                        Dein Inventar enthält folgende Items:");
+        for (int i = 0; i < playerInventory.Count; i++)
+        {
+            Console.WriteLine($"                        {i + 1}. {playerInventory[i].Name}");
+        }
+
+        Console.WriteLine("                        Wähle ein Item aus, indem du die entsprechende Nummer eingibst und drücke Enter,\n                        oder gib eine Zahl größer als 9 ein und bestätige mit Enter, um kein Item zu verwenden:");
+
+        int selectedItemIndex = -1;
+        string input = Console.ReadLine();
+
+        if (int.TryParse(input, out int itemIndex))
+        {
+            if (itemIndex >= 1 && itemIndex <= playerInventory.Count)
+            {
+                selectedItemIndex = itemIndex - 1;
+            }
+            else
+            {
+                Console.WriteLine("                        Ungültige Eingabe. Du hast keine Items verwendet.");
+                return;
+            }
+        }
+        else
+        {
+            Console.WriteLine("                        Du hast keine Items verwendet.");
+            return;
+        }
+
+        ShopItem usedItem = playerInventory[selectedItemIndex];
+        // Hier kannst du die Logik für die Verwendung des ausgewählten Items implementieren
+        Console.WriteLine($"                        Du hast {usedItem.Name} verwendet.");
+        playerInventory.RemoveAt(selectedItemIndex); // Entferne das verwendete Item aus dem Inventar
+    }
+
+
+
+    private void RunGame()
+    {
+        Console.Write("                        Aktueller Kontostand: ");
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("$ " + FormatCurrency((long)balance));
+        Console.ResetColor();
+        Console.WriteLine("                        Verwende Shortkeys für Einsätze:");
+        Console.WriteLine("                        ',' für ein Viertel des Kontostands");
+        Console.WriteLine("                        '.' für die Hälfte des Kontostands");
+        Console.WriteLine("                        '-' für dreiviertel des Kontostands");
+        Console.WriteLine("                        'a' für 'all in'");
+        Console.Write("                        Gib deinen Einsatz ein: ");
+        string input = Console.ReadLine();
+        Console.WriteLine();
+
+
+        long bet = 0;
+
+        if (input.Trim() == ",")
+        {
+            bet = balance / 4; // Ein Viertel des Kontostands
+        }
+        else if (input.Trim() == ".")
+        {
+            bet = balance / 2; // Die Hälfte des Kontostands
+        }
+        else if (input.Trim() == "-")
+        {
+            bet = (long)(balance * 0.75); // Dreiviertel des Kontostands
+        }
+        else if (input.Trim().ToLower() == "a")
+        {
+            bet = balance; // All in
+            BlinkingAllInMessage();
+        }
+        else if (long.TryParse(input, out long customBet) && customBet > 0 && customBet <= balance)
+        {
+            bet = (long)customBet; // Benutzerdefinierter Einsatz
+            if (bet == balance)
+            {
+                BlinkingAllInMessage();
+            }
+        }
+        else
+        {
+            Console.WriteLine("                        Ungültiger Einsatz. Bitte versuche es erneut.");
+            // Hier wird die Methode verlassen, ohne die Runde zu erhöhen
+            return;
+        }
+        currentRound++;
+
+
+
+        if (bet > 0 && bet <= balance)
+        {
+
+            balance = balance - bet;
+
+            UseItem();
+
+            int autoExitLimit = AskForAutoExitLimit();
+            Console.WriteLine("                        Drücke die Leertaste, um das Spiel zu starten...");
+            while (true)
+            {
+                if (Console.KeyAvailable)
+                {
+                    var key = Console.ReadKey(true).Key;
+                    if (key == ConsoleKey.Spacebar)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            int crashSteps = random.Next(1, 100);
+            int rocketPosition = 0;
+
+            bool win = true;
+            bool secondStepReached = false;
+
+            for (int rocketSteps = 0; rocketSteps < crashSteps; rocketSteps++)
+            {
+                Console.Clear();
+                DrawRocket(crashSteps, rocketPosition);
+                DisplayGameInfo(bet);
+
+                if (rocketSteps >= 1)
+                {
+                    if (!secondStepReached)
+                    {
+                        secondStepReached = true;
+                    }
+                    else
+                    {
+                        double randomFactor = Math.Pow(1.01, rocketSteps);
+                        multiplier += randomFactor;
+                    }
+                }
+                if (rocket_step_delay <= 90)
+                {
+                    rocket_step_delay = 90;
+                }
+                else
+                {
+                    rocket_step_delay -= rocketPosition;
+                }
+
+
+                Thread.Sleep(rocket_step_delay);
+
+                rocketPosition++;
+
+                if (rocketPosition >= crashSteps)
+                {
+                    win = false;
+                    break;
+                }
+
+                if (Console.KeyAvailable)
+                {
+                    var key = Console.ReadKey(true).Key;
+                    if (key == ConsoleKey.E || key == ConsoleKey.Spacebar)
+                    {
+                        Console.WriteLine("                        Du bist ausgestiegen.");
+                        break;
+                    }
+                }
+
+                if (rocketSteps == autoExitLimit)
+                {
+                    Console.WriteLine("                        Automatischer Ausstieg aufgrund der festgelegten Grenze.");
+                    break;
+                }
+                exitStep = rocketSteps;
+
+            }
+            // Reset rocket_step_delay to 600 after each round
+            rocket_step_delay = 500;
+
+            UpdateBalance(bet, win, crashSteps, exitStep);
+        }
+        else
+        {
+            Console.WriteLine("                        Ungültiger Einsatz. Bitte versuche es erneut.");
+        }
+    }
+
+    private int AskForAutoExitLimit()
+    {
+        Console.WriteLine("                        Möchtest du eine automatische Ausstiegsgrenze festlegen? (Drücke 'J' für Ja): ");
+        var response = Console.ReadKey(true).Key;
+        if (response == ConsoleKey.J)
+        {
+            Console.Write("                        Gib die Ausstiegsgrenze (ganze Zahl größer als 1) ein: ");
+            int limit;
+            while (!int.TryParse(Console.ReadLine(), out limit) || limit <= 1)
+            {
+                Console.Write("                        Ungültige Eingabe. Bitte gib eine ganze Zahl größer als 1 ein: ");
+            }
+            return limit;
+        }
+        return int.MaxValue; // Keine Ausstiegsgrenze
+    }
+
+    private void DrawRocket(int crashSteps, int rocketPosition)
+    {
+        Console.SetCursorPosition(0, 5);
+
+        for (int i = 0; i < crashSteps; i++)
+        {
+
+            if (i < rocketPosition)
+            {
+
+                if (i < 2)
+                {
+                    Console.SetCursorPosition(0, 3);
+                    Console.WriteLine("#");
+                    Console.WriteLine("#");
+                    Console.WriteLine("#");
+                    Console.WriteLine("#");
+                    Console.WriteLine("#");
+
+
+
+
+                }
+                if (i == 2 || i == 3)
+                {
+                    Console.SetCursorPosition(0, 4);
+                    Console.WriteLine("###");
+                    Console.WriteLine("##");
+
+
+
+
+
+                }
+                Console.SetCursorPosition(i, 5);
+
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write("#");
+                Console.ResetColor();
+
+            }
+
+
+            else if (i == rocketPosition)
+            {
+                // Hier wird die Abgaswolke hinzugefügt
+                Console.SetCursorPosition(i, 5);
+
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Write(">");
+                Console.ResetColor();
+
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Write("]}}");
+                Console.ResetColor();
+
+                Console.ForegroundColor = ConsoleColor.DarkMagenta;
+                Console.Write(i);
+                Console.ResetColor();
+
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Write(")>-");
+                Console.ResetColor();
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("   X" + Math.Round(multiplier, 2));
+                Console.ResetColor();
+
+            }
+            else
+            {
+                Console.Write(" ");
+            }
+
+
+            if (i >= 2)
+            {
+                Console.SetCursorPosition(0, 6);
+                Console.Write("##");
+            }
+            if (i >= 3)
+            {
+                Console.SetCursorPosition(0, 6);
+                Console.Write("###");
+            }
+
+        }
+        Console.WriteLine();
+    }
+
+    private void DisplayGameInfo(long bet)
+    {
+        Console.SetCursorPosition(0, 9);
+        Console.WriteLine("                        Multiplikator: " + multiplier.ToString("0.00"));
+        Console.SetCursorPosition(0, 10);
+        Console.ForegroundColor = ConsoleColor.DarkCyan; // Kontostand in Cyan
+        Console.Write("                        Theoretischer Kontostand: $" + FormatCurrency((long)(balance + (bet * multiplier))));
+        Console.ResetColor();
+        Console.SetCursorPosition(0, 12);
+        Console.WriteLine("                        Drücke die Leertaste, um auszusteigen.");
+    }
+
+    private void UpdateBalance(long bet, bool win, int crashSteps, int exitStep)
+    {
+        if (win)
+        {
+            long result = (long)Math.Round(bet * multiplier);
+            balance += result;
+            Console.SetCursorPosition(0, 13);
+
+            Console.Write("                        Glückwunsch! Du hast ");
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("$" + FormatCurrency(result) + " gewonnen");
+            Console.ResetColor();
+            exitStep++;
+
+            if (crashSteps > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write("                        (Du bist bei ");
+                Console.ForegroundColor = ConsoleColor.DarkRed;
+                Console.Write(exitStep);
+                Console.ResetColor();
+                Console.Write(" ausgestiegen. Die Rakete wäre bei Schritt ");
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+
+                Console.Write(crashSteps);
+
+                Console.ResetColor();
+                Console.Write(" gecrasht)");
+            }
+
+            Console.WriteLine(".");
+        }
+        else
+        {
+            long loss = bet;
+            Console.SetCursorPosition(0, 13);
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("                        Rakete ist bei Schritt " + exitStep + " explodiert. Du verlierst $" + FormatCurrency(loss) + ".");
+            Console.ResetColor();
+        }
+    }
+
+    private void UpdateScores()
+    {
+        try
+        {
+            List<PlayerScore> playerScores = new List<PlayerScore>();
+
+            if (File.Exists(scoresFile))
+            {
+                string[] lines_csv = File.ReadAllLines(scoresFile);
+
+                foreach (string line in lines_csv)
+                {
+                    string[] parts = line.Split(' ');
+                    if (parts.Length == 2 && double.TryParse(parts[1], out double score))
+                    {
+                        playerScores.Add(new PlayerScore(parts[0], score));
+                    }
+                }
+            }
+
+            Console.Write("                        Enter your name:");
+            string playerName = Console.ReadLine();
+            Console.WriteLine();
+            playerScores.Add(new PlayerScore(playerName, balance));
+
+            // Sort the playerScores list by score in descending order
+            playerScores = playerScores.OrderByDescending(score => score.Score).ToList();
+
+            File.WriteAllLines(scoresFile, playerScores.Select(score => $"{score.Name} {score.Score}"));
+
+        }
+        catch (IOException ex)
+        {
+            Console.WriteLine("Error writing the score file: " + ex.Message);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Console.WriteLine("Access to the score file is denied: " + ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("An error occurred: " + ex.Message);
+        }
+    }
+
+    private void ShowHighScores()
+    {
+        if (File.Exists(scoresFile))
+        {
+            Console.WriteLine("High Scores:");
+            Console.WriteLine("--------------------------------------------------------------");
+
+            string[] lines_csv = File.ReadAllLines(scoresFile);
+
+            List<PlayerScore> playerScores = new List<PlayerScore>();
+
+            foreach (string line in lines_csv)
+            {
+                string[] parts = line.Split(' ');
+                if (parts.Length == 2 && double.TryParse(parts[1], out double score))
+                {
+                    playerScores.Add(new PlayerScore(parts[0], score));
+                }
+            }
+
+            playerScores = playerScores.OrderByDescending(score => score.Score).ToList();
+
+            int currentRank = playerScores.FindIndex(score => score.Score == balance);
+
+            for (int i = 0; i < playerScores.Count; i++)
+            {
+                PlayerScore score = playerScores[i];
+                string rank = (i + 1).ToString().PadLeft(4); // Padding für den Rang hinzugefügt
+                string name = score.Name.PadRight(20);
+                string scoreValue = score.Score.ToString("C2").PadLeft(36); // Das Format "C2" fügt das Dollarzeichen hinzu
+
+                if (i == currentRank)
+                {
+                    Console.ForegroundColor = ConsoleColor.Green;
+                }
+                Console.WriteLine($"{rank} {name} {scoreValue}");
+                Console.ResetColor();
+            }
+
+            Console.WriteLine("--------------------------------------------------------------");
+        }
+    }
+
+    private bool AskToPlayAgain()
+    {
+        Console.Write("                        Möchtest du noch einmal spielen? (Drücke 'J' und dann Enter für Ja): ");
+        var input = Console.ReadLine();
+        Console.Clear();
+        return input.Trim().ToLower() == "j"; // Prüfen, ob die Eingabe "j" (oder "J") ist
+    }
+
+    private void ResetGame()
+    {
+        currentRound = 0; // Runde zurücksetzen
+        balance = 100; // Kontostand zurücksetzen
+        multiplier = 1.0; // Multiplikator zurücksetzen
+    }
+
+    private void BlinkingAllInMessage()
+    {
+
+
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.BackgroundColor = ConsoleColor.Black;
+        Console.Clear();
+        Console.SetCursorPosition(10, 10);
+        Console.WriteLine(@"
+                                         $$$$$$\  $$\       $$\             $$$$$$\ $$\   $$\       $$\ $$\ $$\
+                                        $$  __$$\ $$ |      $$ |            \_$$  _|$$$\  $$ |      $$ |$$ |$$ |
+                                        $$ /  $$ |$$ |      $$ |              $$ |  $$$$\ $$ |      $$ |$$ |$$ |
+                                        $$$$$$$$ |$$ |      $$ |              $$ |  $$ $$\$$ |      $$ |$$ |$$ |
+                                        $$  __$$ |$$ |      $$ |              $$ |  $$ \$$$$ |      \__|\__|\__|
+                                        $$ |  $$ |$$ |      $$ |              $$ |  $$ |\$$$ |                  
+                                        $$ |  $$ |$$$$$$$$\ $$$$$$$$\       $$$$$$\ $$ | \$$ |      $$\ $$\ $$\
+                                        \__|  \__|\________|\________|      \______|\__|  \__|      \__|\__|\__|
+                                                                       
+                                                                       
+                                                                       
+");
+        Thread.Sleep(200);
+        Console.Clear();
+
+        Console.ForegroundColor = ConsoleColor.Black;
+        Console.BackgroundColor = ConsoleColor.Green;
+        Console.Clear();
+        Console.SetCursorPosition(10, 10);
+        Console.WriteLine(@"
+                                         $$$$$$\  $$\       $$\             $$$$$$\ $$\   $$\       $$\ $$\ $$\
+                                        $$  __$$\ $$ |      $$ |            \_$$  _|$$$\  $$ |      $$ |$$ |$$ |
+                                        $$ /  $$ |$$ |      $$ |              $$ |  $$$$\ $$ |      $$ |$$ |$$ |
+                                        $$$$$$$$ |$$ |      $$ |              $$ |  $$ $$\$$ |      $$ |$$ |$$ |
+                                        $$  __$$ |$$ |      $$ |              $$ |  $$ \$$$$ |      \__|\__|\__|
+                                        $$ |  $$ |$$ |      $$ |              $$ |  $$ |\$$$ |                  
+                                        $$ |  $$ |$$$$$$$$\ $$$$$$$$\       $$$$$$\ $$ | \$$ |      $$\ $$\ $$\
+                                        \__|  \__|\________|\________|      \______|\__|  \__|      \__|\__|\__|
+                                                                       
+                                                                       
+                                                                       
+");
+        Thread.Sleep(200);
+        Console.Clear();
+
+
+        // Runde 2
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.BackgroundColor = ConsoleColor.Black;
+        Console.Clear();
+        Console.SetCursorPosition(10, 10);
+        Console.WriteLine(@"
+                                         $$$$$$\  $$\       $$\             $$$$$$\ $$\   $$\       $$\ $$\ $$\
+                                        $$  __$$\ $$ |      $$ |            \_$$  _|$$$\  $$ |      $$ |$$ |$$ |
+                                        $$ /  $$ |$$ |      $$ |              $$ |  $$$$\ $$ |      $$ |$$ |$$ |
+                                        $$$$$$$$ |$$ |      $$ |              $$ |  $$ $$\$$ |      $$ |$$ |$$ |
+                                        $$  __$$ |$$ |      $$ |              $$ |  $$ \$$$$ |      \__|\__|\__|
+                                        $$ |  $$ |$$ |      $$ |              $$ |  $$ |\$$$ |                  
+                                        $$ |  $$ |$$$$$$$$\ $$$$$$$$\       $$$$$$\ $$ | \$$ |      $$\ $$\ $$\
+                                        \__|  \__|\________|\________|      \______|\__|  \__|      \__|\__|\__|
+                                                                       
+                                                                       
+                                                                       
+");
+        Thread.Sleep(90);
+        Console.Clear();
+
+        Console.ForegroundColor = ConsoleColor.Black;
+        Console.BackgroundColor = ConsoleColor.Green;
+        Console.Clear();
+        Console.SetCursorPosition(10, 10);
+        Console.WriteLine(@"
+                                         $$$$$$\  $$\       $$\             $$$$$$\ $$\   $$\       $$\ $$\ $$\
+                                        $$  __$$\ $$ |      $$ |            \_$$  _|$$$\  $$ |      $$ |$$ |$$ |
+                                        $$ /  $$ |$$ |      $$ |              $$ |  $$$$\ $$ |      $$ |$$ |$$ |
+                                        $$$$$$$$ |$$ |      $$ |              $$ |  $$ $$\$$ |      $$ |$$ |$$ |
+                                        $$  __$$ |$$ |      $$ |              $$ |  $$ \$$$$ |      \__|\__|\__|
+                                        $$ |  $$ |$$ |      $$ |              $$ |  $$ |\$$$ |                  
+                                        $$ |  $$ |$$$$$$$$\ $$$$$$$$\       $$$$$$\ $$ | \$$ |      $$\ $$\ $$\
+                                        \__|  \__|\________|\________|      \______|\__|  \__|      \__|\__|\__|
+                                                                       
+                                                                       
+                                                                       
+");
+        Thread.Sleep(90);
+        Console.Clear();
+
+
+        // Runde 3
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.BackgroundColor = ConsoleColor.Black;
+        Console.Clear();
+        Console.SetCursorPosition(10, 10);
+        Console.WriteLine(@"
+                                         $$$$$$\  $$\       $$\             $$$$$$\ $$\   $$\       $$\ $$\ $$\
+                                        $$  __$$\ $$ |      $$ |            \_$$  _|$$$\  $$ |      $$ |$$ |$$ |
+                                        $$ /  $$ |$$ |      $$ |              $$ |  $$$$\ $$ |      $$ |$$ |$$ |
+                                        $$$$$$$$ |$$ |      $$ |              $$ |  $$ $$\$$ |      $$ |$$ |$$ |
+                                        $$  __$$ |$$ |      $$ |              $$ |  $$ \$$$$ |      \__|\__|\__|
+                                        $$ |  $$ |$$ |      $$ |              $$ |  $$ |\$$$ |                  
+                                        $$ |  $$ |$$$$$$$$\ $$$$$$$$\       $$$$$$\ $$ | \$$ |      $$\ $$\ $$\
+                                        \__|  \__|\________|\________|      \______|\__|  \__|      \__|\__|\__|
+                                                                       
+                                                                       
+                                                                       
+");
+        Thread.Sleep(80);
+        Console.Clear();
+
+        Console.ForegroundColor = ConsoleColor.Black;
+        Console.BackgroundColor = ConsoleColor.Green;
+        Console.Clear();
+        Console.SetCursorPosition(10, 10);
+        Console.WriteLine(@"
+                                         $$$$$$\  $$\       $$\             $$$$$$\ $$\   $$\       $$\ $$\ $$\
+                                        $$  __$$\ $$ |      $$ |            \_$$  _|$$$\  $$ |      $$ |$$ |$$ |
+                                        $$ /  $$ |$$ |      $$ |              $$ |  $$$$\ $$ |      $$ |$$ |$$ |
+                                        $$$$$$$$ |$$ |      $$ |              $$ |  $$ $$\$$ |      $$ |$$ |$$ |
+                                        $$  __$$ |$$ |      $$ |              $$ |  $$ \$$$$ |      \__|\__|\__|
+                                        $$ |  $$ |$$ |      $$ |              $$ |  $$ |\$$$ |                  
+                                        $$ |  $$ |$$$$$$$$\ $$$$$$$$\       $$$$$$\ $$ | \$$ |      $$\ $$\ $$\
+                                        \__|  \__|\________|\________|      \______|\__|  \__|      \__|\__|\__|
+                                                                       
+                                                                       
+                                                                       
+");
+        Thread.Sleep(80);
+        Console.Clear();
+
+
+
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.BackgroundColor = ConsoleColor.Black;
+        Console.Clear();
+    }
+
+}
+
+class PlayerScore
+{
+    public string Name { get; set; }
+    public double Score { get; set; }
+
+    public PlayerScore(string name, double score)
+    {
+        Name = name;
+        Score = score;
+    }
+}
+
+public class ShopItem
+{
+    public string Name { get; set; }
+    public long Price { get; set; }
+    public string Description { get; set; }
+
+    public ShopItem(string name, long price, string description)
+    {
+        Name = name;
+        Price = price;
+        Description = description;
+    }
+}
+
+
+
+class Program
+{
+    static void Main()
+    {
+        RocketGame game = new RocketGame(100.0); // Spiel initialisieren
+        game.Start(); // Spiel starten
+    }
+}
+
